@@ -119,9 +119,10 @@ func main() {
 
 	var m tea.Model
 
+	mUpToDate := upToDate(func() tea.Model { return m })
 	items := []list.Item{
-		menuItem{name: "Start", model: start(m)},
-		menuItem{name: "Settings", model: settings(upToDate(func() tea.Model { return m }))},
+		menuItem{name: "Start", model: start(mUpToDate)},
+		menuItem{name: "Settings", model: settings(mUpToDate)},
 	}
 
 	const defaultWidth = 20
@@ -159,24 +160,50 @@ func start(m tea.Model) tea.Model {
 	return simpleSpinner(func() tea.Msg {
 		tpuWatcher := TPUWatcher{
 			project:      viper.GetString("project"),
-			zone:         viper.GetString("zone"),
+			zone:         viper.GetString("region"),
 			instanceType: viper.GetString("instanceType"),
 			id:           "raleigh-tpu-1",
 		}
-		status := tpuWatcher.checkStatus()
-		if status == tpuStatusRunning || status == tpuStatusCreating {
-			delErr := tpuWatcher.delete()
-			if delErr != nil {
-				panic(fmt.Errorf("error deleting tpu: %w", delErr))
-			}
-		}
-		status = tpuWatcher.checkStatus()
-		if status == tpuStatusNonexistent {
+
+		_, status := tpuWatcher.checkStatus()
+		if status == tpuStatusNonexistent || status == tpuStatusDeleting {
 			startErr := tpuWatcher.start()
 			if startErr != nil {
 				panic(fmt.Errorf("error starting tpu: %w", startErr))
 			}
 		}
+
+		tpuInfo, status := tpuWatcher.checkStatus()
+		fmt.Printf("tpuInfo: %+v\n", tpuInfo)
+		fmt.Printf("status: %+v\n", status)
+
+		// uvCmd := tpuWatcher.ssh("raleigh", "curl -LsSf https://astral.sh/uv/install.sh | sh")
+		// uvCmd.Stderr = os.Stderr
+		// uvCmd.Stdout = os.Stdout
+		// err := uvCmd.Run()
+		// if err != nil {
+		// 	panic(fmt.Errorf("error running uv: %w", err))
+		// }
+		syncCmd := tpuWatcher.ssh("raleigh", "cd ~/levanter && ~/.local/bin/uv sync --extra tpu")
+		syncCmd.Stderr = os.Stderr
+		syncCmd.Stdout = os.Stdout
+		err := syncCmd.Run()
+		if err != nil {
+			panic(fmt.Errorf("error running sync: %w", err))
+		}
+
+		// err := tpuWatcher.scp("levanter", "~/levanter", "raleigh")
+		// if err != nil {
+		// 	panic(fmt.Errorf("error scp: %w", err))
+		// }
+
+		// status := tpuWatcher.checkStatus()
+		// if status == tpuStatusRunning || status == tpuStatusCreating {
+		// 	delErr := tpuWatcher.delete()
+		// 	if delErr != nil {
+		// 		panic(fmt.Errorf("error deleting tpu: %w", delErr))
+		// 	}
+		// }
 		return m
 	}, "Starting...")
 }
