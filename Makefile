@@ -1,2 +1,4 @@
-run:
-	go run launcher/launcher.go
+
+
+run: launcher/*.go
+	go run launcher/*.go

@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/spf13/viper"
 )
 
 const listHeight = 6
@@ -39,7 +40,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.list.SetWidth(msg.Width)
-		m.list.SetHeight(msg.Height)
+		m.list.SetHeight(msg.Height - 1)
 		return m, nil
 
 	case tea.KeyMsg:
@@ -70,8 +71,25 @@ func (m model) View() string {
 }
 
 func main() {
+	viper.SetConfigName("config")
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath("/etc/raleigh/")
+	viper.AddConfigPath("$HOME/.raleigh")
+	viper.AddConfigPath(".")
+	err := viper.ReadInConfig()
+	if err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			fmt.Println("Config file not found; creating default config file")
+			viper.SafeWriteConfigAs("$HOME/.raleigh/config.yaml")
+		} else {
+			panic(fmt.Errorf("fatal error config file: %w", err))
+		}
+	}
+
+	var m tea.Model
+
 	items := []list.Item{
-		menuItem{name: "Settings", model: nil},
+		menuItem{name: "Settings", model: settings(upToDate(func() tea.Model { return m }))},
 		menuItem{name: "Start", model: nil},
 	}
 
@@ -88,7 +106,14 @@ func main() {
 	l.Styles.PaginationStyle = paginationStyle
 	l.Styles.HelpStyle = helpStyle
 
-	m := model{list: l}
+	m = &model{list: l}
+
+	if viper.GetString("project") == "" {
+		m = selectProject(m)
+	}
+	if viper.GetString("region") == "" {
+		m = selectRegion(m)
+	}
 
 	if _, err := tea.NewProgram(m).Run(); err != nil {
 		fmt.Println("Error running program:", err)
