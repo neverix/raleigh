@@ -156,54 +156,75 @@ func main() {
 	}
 }
 
+type tpuStats struct {
+	numActive    int
+	numInstalled int
+}
+
+type TpuLaunchMonitor struct {
+	watcher  *TpuWatcher
+	tpuStats tpuStats
+}
+
+func listenTpuUpdates(watcher *TpuWatcher) tea.Cmd {
+	return func() tea.Msg {
+		<-watcher.updates
+		numActive, numInstalled := 0, 0
+		for _, status := range watcher.statuses {
+			status.mutex.Lock()
+			if status.status.status == tpuStatusRunning {
+				numActive++
+			}
+			if status.status.installed {
+				numInstalled++
+			}
+			status.mutex.Unlock()
+
+		}
+		return tpuStats{
+			numActive:    numActive,
+			numInstalled: numInstalled,
+		}
+	}
+}
+
+func (t *TpuLaunchMonitor) Init() tea.Cmd {
+	return listenTpuUpdates(t.watcher)
+}
+
+func (t *TpuLaunchMonitor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch keypress := msg.String(); keypress {
+		case "q", "ctrl+c":
+			return nil, tea.Quit
+		}
+	case tpuStats:
+		t.tpuStats = msg
+		return t, nil
+	}
+	return t, nil
+}
+
+func (t *TpuLaunchMonitor) View() string {
+	return fmt.Sprintf("Active: %d, Installed: %d", t.tpuStats.numActive, t.tpuStats.numInstalled)
+}
+
 func start(m tea.Model) tea.Model {
 	return simpleSpinner(func() tea.Msg {
-		tpuWatcher := TPUWatcher{
-			project:      viper.GetString("project"),
-			zone:         viper.GetString("region"),
-			instanceType: viper.GetString("instanceType"),
-			id:           "raleigh-tpu-1",
+		watcher := NewTpuWatcher(TpuConfig{
+			project:        viper.GetString("project"),
+			zone:           viper.GetString("region"),
+			instanceType:   viper.GetString("instanceType"),
+			numTpus:        1,
+			username:       "raleigh",
+			repoPath:       "./levanter",
+			remoteRepoPath: "~/levanter",
+			installCommand: "~/.local/bin/uv sync --extra tpu",
+		}, 1)
+
+		return &TpuLaunchMonitor{
+			watcher: watcher,
 		}
-
-		_, status := tpuWatcher.checkStatus()
-		if status == tpuStatusNonexistent || status == tpuStatusDeleting {
-			startErr := tpuWatcher.start()
-			if startErr != nil {
-				panic(fmt.Errorf("error starting tpu: %w", startErr))
-			}
-		}
-
-		tpuInfo, status := tpuWatcher.checkStatus()
-		fmt.Printf("tpuInfo: %+v\n", tpuInfo)
-		fmt.Printf("status: %+v\n", status)
-
-		// uvCmd := tpuWatcher.ssh("raleigh", "curl -LsSf https://astral.sh/uv/install.sh | sh")
-		// uvCmd.Stderr = os.Stderr
-		// uvCmd.Stdout = os.Stdout
-		// err := uvCmd.Run()
-		// if err != nil {
-		// 	panic(fmt.Errorf("error running uv: %w", err))
-		// }
-		syncCmd := tpuWatcher.ssh("raleigh", "cd ~/levanter && ~/.local/bin/uv sync --extra tpu")
-		syncCmd.Stderr = os.Stderr
-		syncCmd.Stdout = os.Stdout
-		err := syncCmd.Run()
-		if err != nil {
-			panic(fmt.Errorf("error running sync: %w", err))
-		}
-
-		// err := tpuWatcher.scp("levanter", "~/levanter", "raleigh")
-		// if err != nil {
-		// 	panic(fmt.Errorf("error scp: %w", err))
-		// }
-
-		// status := tpuWatcher.checkStatus()
-		// if status == tpuStatusRunning || status == tpuStatusCreating {
-		// 	delErr := tpuWatcher.delete()
-		// 	if delErr != nil {
-		// 		panic(fmt.Errorf("error deleting tpu: %w", delErr))
-		// 	}
-		// }
-		return m
 	}, "Starting...")
 }

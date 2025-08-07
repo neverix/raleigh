@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-type TPUWatcher struct {
+type TpuController struct {
 	project      string
 	zone         string
 	instanceType string
@@ -80,7 +80,7 @@ type tpuInfoRaw struct {
 	Health string `json:"health"`
 }
 
-func (t *TPUWatcher) checkStatus() (tpuInfo, tpuStatus) {
+func (t *TpuController) checkStatus() (tpuInfo, tpuStatus) {
 	cmd := exec.Command("gcloud", "compute", "tpus", "tpu-vm", "describe", t.id, "--project", t.project, "--zone", t.zone, "--format", "json")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -123,7 +123,7 @@ func (t *TPUWatcher) checkStatus() (tpuInfo, tpuStatus) {
 	return t.latestInfo, t.latestStatus
 }
 
-func (t *TPUWatcher) scp(localPath string, remotePath string, user string) error {
+func (t *TpuController) scp(localPath string, remotePath string, user string) error {
 	cmd := exec.Command("gcloud", "compute", "tpus", "tpu-vm", "scp", "--recurse", localPath, user+"@"+t.id+":"+remotePath, "--project", t.project, "--zone", t.zone)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -135,11 +135,23 @@ func (t *TPUWatcher) scp(localPath string, remotePath string, user string) error
 	return nil
 }
 
-func (t *TPUWatcher) ssh(user string, command string) *exec.Cmd {
+func (t *TpuController) scpFrom(user string, localPath string, remotePath string) error {
+	cmd := exec.Command("gcloud", "compute", "tpus", "tpu-vm", "scp", user+"@"+t.id+":"+remotePath, localPath, "--project", t.project, "--zone", t.zone)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		log.Printf("error scp from: %v\n", stderr.String())
+		return err
+	}
+	return nil
+}
+
+func (t *TpuController) ssh(user string, command string) *exec.Cmd {
 	return exec.Command("gcloud", "compute", "tpus", "tpu-vm", "ssh", user+"@"+t.id, "--project", t.project, "--zone", t.zone, "--command", command)
 }
 
-func (t *TPUWatcher) start() error {
+func (t *TpuController) start() error {
 	cmd := exec.Command("gcloud", "compute", "tpus", "tpu-vm", "create", t.id, "--project", t.project, "--zone", t.zone, "--accelerator-type", t.instanceType, "--version", "v2-alpha", "--preemptible")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -151,6 +163,6 @@ func (t *TPUWatcher) start() error {
 	return nil
 }
 
-func (t *TPUWatcher) delete() error {
+func (t *TpuController) delete() error {
 	return exec.Command("gcloud", "compute", "tpus", "tpu-vm", "delete", t.id, "--project", t.project, "--zone", t.zone, "--quiet").Run()
 }
