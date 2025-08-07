@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -54,7 +56,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if ok {
 				m.choice = i.name
 			}
-			return i.model, nil
+			return i.model, i.model.Init()
 		}
 	}
 
@@ -70,13 +72,37 @@ func (m model) View() string {
 	return m.list.View()
 }
 
+type GcloudAuth struct {
+	Account string `json:"account"`
+	Status  string `json:"status"`
+}
+
 func main() {
+	gcloudAuth, err := exec.Command("gcloud", "auth", "list", "--format", "json").Output()
+	if err != nil {
+		panic(fmt.Errorf("fatal error getting gcloud auth: %w", err))
+	}
+	var authList []GcloudAuth
+	err = json.Unmarshal(gcloudAuth, &authList)
+	if err != nil {
+		panic(fmt.Errorf("fatal error unmarshalling gcloud auth: %w", err))
+	}
+	hasActiveAuth := false
+	for _, auth := range authList {
+		if auth.Status == "ACTIVE" {
+			hasActiveAuth = true
+		}
+	}
+	if !hasActiveAuth {
+		exec.Command("gcloud", "auth", "login").Run()
+	}
+
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("/etc/raleigh/")
 	viper.AddConfigPath("$HOME/.raleigh")
-	err := viper.ReadInConfig()
+	err = viper.ReadInConfig()
 	if err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			fmt.Println("Config file not found; creating default config file")
@@ -94,8 +120,8 @@ func main() {
 	var m tea.Model
 
 	items := []list.Item{
+		menuItem{name: "Start", model: start(m)},
 		menuItem{name: "Settings", model: settings(upToDate(func() tea.Model { return m }))},
-		menuItem{name: "Start", model: nil},
 	}
 
 	const defaultWidth = 20
@@ -127,4 +153,30 @@ func main() {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
 	}
+}
+
+func start(m tea.Model) tea.Model {
+	return simpleSpinner(func() tea.Msg {
+		tpuWatcher := TPUWatcher{
+			project:      viper.GetString("project"),
+			zone:         viper.GetString("zone"),
+			instanceType: viper.GetString("instanceType"),
+			id:           "raleigh-tpu-1",
+		}
+		status := tpuWatcher.checkStatus()
+		if status == tpuStatusRunning || status == tpuStatusCreating {
+			delErr := tpuWatcher.delete()
+			if delErr != nil {
+				panic(fmt.Errorf("error deleting tpu: %w", delErr))
+			}
+		}
+		status = tpuWatcher.checkStatus()
+		if status == tpuStatusNonexistent {
+			startErr := tpuWatcher.start()
+			if startErr != nil {
+				panic(fmt.Errorf("error starting tpu: %w", startErr))
+			}
+		}
+		return m
+	}, "Starting...")
 }
