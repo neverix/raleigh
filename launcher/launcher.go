@@ -73,14 +73,19 @@ func (m model) View() string {
 func main() {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
+	viper.AddConfigPath(".")
 	viper.AddConfigPath("/etc/raleigh/")
 	viper.AddConfigPath("$HOME/.raleigh")
-	viper.AddConfigPath(".")
 	err := viper.ReadInConfig()
 	if err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 			fmt.Println("Config file not found; creating default config file")
-			viper.SafeWriteConfigAs("$HOME/.raleigh/config.yaml")
+			home_dir, err := os.UserHomeDir()
+			if err != nil {
+				panic(fmt.Errorf("fatal error getting home directory: %w", err))
+			}
+			os.MkdirAll(fmt.Sprintf("%s/.raleigh", home_dir), 0755)
+			viper.SafeWriteConfigAs(fmt.Sprintf("%s/.raleigh/config.yaml", home_dir))
 		} else {
 			panic(fmt.Errorf("fatal error config file: %w", err))
 		}
@@ -113,6 +118,9 @@ func main() {
 	}
 	if viper.GetString("region") == "" {
 		m = selectRegion(m)
+	}
+	if viper.GetString("instanceType") == "" {
+		m = selectInstanceType(m)
 	}
 
 	if _, err := tea.NewProgram(m).Run(); err != nil {

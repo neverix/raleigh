@@ -146,6 +146,9 @@ func (m simpleSpinnerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m simpleSpinnerModel) View() string {
 	builder := strings.Builder{}
 	totalHeight := m.height - 1
+	if totalHeight < 0 {
+		totalHeight = 0
+	}
 	heightBefore := totalHeight / 2
 	heightAfter := totalHeight - heightBefore
 	builder.WriteString(strings.Repeat("\n", heightBefore))
@@ -223,6 +226,20 @@ func selectRegion(m tea.Model) tea.Model {
 	})
 }
 
+func selectInstanceType(m tea.Model) tea.Model {
+	instanceType := viper.GetString("instanceType")
+
+	items := []simpleListItem{
+		simpleListItem{name: "v2-8", id: "v2-8"},
+		simpleListItem{name: "v3-8", id: "v3-8"},
+	}
+	return createList(setDefault(items, instanceType), "Select Instance Type", func(id string) tea.Model {
+		viper.Set("instanceType", id)
+		viper.WriteConfig()
+		return m
+	})
+}
+
 func settings(m tea.Model) tea.Model {
 	var settings simpleListModel
 
@@ -230,6 +247,7 @@ func settings(m tea.Model) tea.Model {
 		[]list.Item{
 			simpleListItem{name: "Project", id: "project"},
 			simpleListItem{name: "Region", id: "region"},
+			simpleListItem{name: "Instance Type", id: "instanceType"},
 			simpleListItem{name: "Back", id: "back"},
 		},
 		"Settings",
