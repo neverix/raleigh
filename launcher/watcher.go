@@ -32,7 +32,7 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 			time.Sleep(5 * time.Second)
 		}
 		firstIteration = false
-		newInstaller, err := NewTpuInstaller(cfg, fmt.Sprintf("raleigh-tpu-%d", id))
+		newInstaller, err := NewTpuInstaller(cfg, fmt.Sprintf("%s%d", cfg.tpuPrefix, id))
 		if err != nil {
 			continue
 		}
@@ -74,11 +74,11 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 	}
 }
 
-func NewTpuWatcher(cfg TpuConfig, n int) *TpuWatcher {
-	tpuInstallers := make([]*TpuInstaller, n)
+func NewTpuWatcher(cfg TpuConfig) *TpuWatcher {
+	tpuInstallers := make([]*TpuInstaller, cfg.numTpus)
 	channel := make(chan TpuStatusUpdate)
-	statuses := make([]TpuCurrentStatus, n)
-	for i := 0; i < n; i++ {
+	statuses := make([]TpuCurrentStatus, cfg.numTpus)
+	for i := 0; i < cfg.numTpus; i++ {
 		tpuInstallers[i] = &TpuInstaller{}
 		go Watch(cfg, i, tpuInstallers[i], channel, &statuses[i])
 	}

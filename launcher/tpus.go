@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os/exec"
 	"strings"
@@ -13,6 +14,7 @@ type TpuController struct {
 	zone         string
 	instanceType string
 	id           string
+	preemptible  bool
 
 	latestInfo   tpuInfo
 	latestStatus tpuStatus
@@ -135,6 +137,21 @@ func (t *TpuController) scp(localPath string, remotePath string, user string) er
 	return nil
 }
 
+func (t *TpuController) rsync(localPath string, remotePath string, user string) error {
+	if t.latestInfo.Status != tpuStatusRunning {
+		return fmt.Errorf("tpu must be running to rsync")
+	}
+	cmd := exec.Command("rsync", "-avz", localPath, user+"@"+t.latestInfo.IP+":"+remotePath, "-e", "ssh -i ~/.ssh/google_compute_engine -o \"StrictHostKeyChecking=no\nUserKnownHostsFile=/dev/null\"")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		log.Printf("error rsync: %v\n", stderr.String())
+		return err
+	}
+	return nil
+}
+
 func (t *TpuController) scpFrom(user string, localPath string, remotePath string) error {
 	cmd := exec.Command("gcloud", "compute", "tpus", "tpu-vm", "scp", user+"@"+t.id+":"+remotePath, localPath, "--project", t.project, "--zone", t.zone)
 	var stderr bytes.Buffer
@@ -152,7 +169,11 @@ func (t *TpuController) ssh(user string, command string) *exec.Cmd {
 }
 
 func (t *TpuController) start() error {
-	cmd := exec.Command("gcloud", "compute", "tpus", "tpu-vm", "create", t.id, "--project", t.project, "--zone", t.zone, "--accelerator-type", t.instanceType, "--version", "v2-alpha", "--preemptible")
+	args := []string{"compute", "tpus", "tpu-vm", "create", t.id, "--project", t.project, "--zone", t.zone, "--accelerator-type", t.instanceType, "--version", "tpu-ubuntu2204-base"}
+	if t.preemptible {
+		args = append(args, "--preemptible")
+	}
+	cmd := exec.Command("gcloud", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := cmd.Run()

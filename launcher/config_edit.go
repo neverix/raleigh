@@ -210,58 +210,102 @@ func selectProject(m tea.Model) tea.Model {
 	return simpleSpinner(modelGetter, "Loading projects...")
 }
 
-func selectRegion(m tea.Model) tea.Model {
-	region := viper.GetString("region")
+func simpleSelector(configKey string, configKeyName string, itemGenerator func() []simpleListItem) func(m tea.Model) tea.Model {
+	return func(m tea.Model) tea.Model {
+		configValue := viper.GetString(configKey)
 
-	items := []simpleListItem{
-		simpleListItem{name: "us-central2-b", id: "us-central2-b"},
-		simpleListItem{name: "us-central1-f", id: "us-central1-f"},
-		simpleListItem{name: "europe-west4-a", id: "europe-west4-a"},
-		simpleListItem{name: "us-east1-d", id: "us-east1-d"},
+		items := itemGenerator()
+		return createList(setDefault(items, configValue), "Select "+configKeyName, func(id string) tea.Model {
+			viper.Set(configKey, id)
+			viper.WriteConfig()
+			return m
+		})
 	}
-	return createList(setDefault(items, region), "Select Region", func(id string) tea.Model {
-		viper.Set("region", id)
-		viper.WriteConfig()
-		return m
-	})
+}
+func simpleSelectorConstant(configKey string, configKeyName string, items []simpleListItem) func(m tea.Model) tea.Model {
+	return simpleSelector(configKey, configKeyName, func() []simpleListItem { return items })
 }
 
-func selectInstanceType(m tea.Model) tea.Model {
-	instanceType := viper.GetString("instanceType")
-
-	items := []simpleListItem{
-		simpleListItem{name: "v2-8", id: "v2-8"},
-		simpleListItem{name: "v3-8", id: "v3-8"},
+func simpleSelectorBool(configKey string) func(m tea.Model) tea.Model {
+	return func(m tea.Model) tea.Model {
+		configValue := viper.GetBool(configKey)
+		items := []simpleListItem{
+			{name: "true", id: "true"},
+			{name: "false", id: "false"},
+		}
+		configValueString := "false"
+		if configValue {
+			configValueString = "true"
+		}
+		return createList(setDefault(items, configValueString), "Select "+configKey, func(id string) tea.Model {
+			viper.Set(configKey, id == "true")
+			viper.WriteConfig()
+			return m
+		})
 	}
-	return createList(setDefault(items, instanceType), "Select Instance Type", func(id string) tea.Model {
-		viper.Set("instanceType", id)
-		viper.WriteConfig()
-		return m
-	})
+}
+
+var selectRegion = simpleSelectorConstant("region", "Region", []simpleListItem{
+	{name: "us-central2-b", id: "us-central2-b"},
+	{name: "us-central1-f", id: "us-central1-f"},
+	{name: "europe-west4-a", id: "europe-west4-a"},
+	{name: "us-east1-d", id: "us-east1-d"},
+})
+
+var selectInstanceType = simpleSelectorConstant("instanceType", "Instance Type", []simpleListItem{
+	{name: "v2-8", id: "v2-8"},
+	{name: "v3-8", id: "v3-8"},
+	{name: "v4-8", id: "v4-8"},
+})
+
+type settingChoice struct {
+	id   string
+	name string
+	fn   func(m tea.Model) tea.Model
 }
 
 func settings(m tea.Model) tea.Model {
 	var settings simpleListModel
 
+	choices := []settingChoice{
+		{id: "project", name: "Project", fn: selectProject},
+		{id: "region", name: "Region", fn: selectRegion},
+		{id: "instanceType", name: "Instance Type", fn: selectInstanceType},
+		{id: "preemptible", name: "Preemptible", fn: simpleSelectorBool("preemptible")},
+	}
+	items := []list.Item{
+		simpleListItem{name: "Back", id: "back"},
+	}
+	for _, choice := range choices {
+		items = append(items, simpleListItem{name: choice.name, id: choice.id})
+	}
+
 	settings = createList(
-		[]list.Item{
-			simpleListItem{name: "Project", id: "project"},
-			simpleListItem{name: "Region", id: "region"},
-			simpleListItem{name: "Instance Type", id: "instanceType"},
-			simpleListItem{name: "Back", id: "back"},
-		},
+		items,
 		"Settings",
 		func(id string) tea.Model {
-			switch id {
-			case "project":
-				return selectProject(upToDate(func() tea.Model { return settings }))
-			case "region":
-				return selectRegion(upToDate(func() tea.Model { return settings }))
-			case "back":
-				return m
+			for _, choice := range choices {
+				if choice.id == id {
+					return choice.fn(upToDate(func() tea.Model { return settings }))
+				}
 			}
 			return m
 		},
 	)
 	return settings
+}
+
+func GetConfig() TpuConfig {
+	return TpuConfig{
+		project:          viper.GetString("project"),
+		zone:             viper.GetString("region"),
+		instanceType:     viper.GetString("instanceType"),
+		numTpus:          viper.GetInt("numTpus"),
+		username:         viper.GetString("username"),
+		repoPath:         viper.GetString("repoPath"),
+		remoteRepoPath:   viper.GetString("remoteRepoPath"),
+		installCommand:   viper.GetString("installCommand"),
+		tpuPrefix:        viper.GetString("tpuPrefix"),
+		installerVersion: viper.GetString("installerVersion"),
+	}
 }

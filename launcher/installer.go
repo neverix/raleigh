@@ -11,14 +11,16 @@ import (
 )
 
 type TpuConfig struct {
-	repoPath       string
-	remoteRepoPath string
-	zone           string
-	project        string
-	instanceType   string
-	numTpus        int
-	username       string
-	installCommand string
+	repoPath         string
+	remoteRepoPath   string
+	zone             string
+	project          string
+	instanceType     string
+	numTpus          int
+	username         string
+	installCommand   string
+	tpuPrefix        string
+	installerVersion string
 }
 
 type TpuInstaller struct {
@@ -39,7 +41,7 @@ func NewTpuInstaller(cfg TpuConfig, id string) (*TpuInstaller, error) {
 			id:           id,
 		},
 		cfg:              cfg,
-		installerVersion: "0.0.1a",
+		installerVersion: cfg.installerVersion,
 	}
 	_, status := installer.tpuController.checkStatus()
 	if status == tpuStatusError {
@@ -183,7 +185,7 @@ func (t *TpuInstaller) CheckRepoCloned() (string, bool, error) {
 }
 
 func (t *TpuInstaller) CloneRepo() error {
-	err := t.tpuController.scp(t.cfg.repoPath, t.cfg.remoteRepoPath, t.cfg.username)
+	err := t.tpuController.rsync(t.cfg.repoPath, t.cfg.remoteRepoPath, t.cfg.username)
 	if err != nil {
 		return fmt.Errorf("error cloning repo: %w", err)
 	}

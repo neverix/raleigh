@@ -102,6 +102,7 @@ func main() {
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("/etc/raleigh/")
 	viper.AddConfigPath("$HOME/.raleigh")
+
 	err = viper.ReadInConfig()
 	if err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
@@ -116,6 +117,16 @@ func main() {
 			panic(fmt.Errorf("fatal error config file: %w", err))
 		}
 	}
+
+	viper.SetDefault("preemptible", false)
+	viper.SetDefault("instanceType", "v4-8")
+	viper.SetDefault("tpuPrefix", "hobby")
+	viper.SetDefault("numTpus", 2)
+	viper.SetDefault("username", "raleigh")
+	viper.SetDefault("repoPath", "./jif")
+	viper.SetDefault("remoteRepoPath", "~/jif")
+	viper.SetDefault("installCommand", "~/.local/bin/uv sync")
+	viper.SetDefault("installerVersion", "0.0.1b")
 
 	var m tea.Model
 
@@ -212,16 +223,7 @@ func (t *TpuLaunchMonitor) View() string {
 
 func start(m tea.Model) tea.Model {
 	return simpleSpinner(func() tea.Msg {
-		watcher := NewTpuWatcher(TpuConfig{
-			project:        viper.GetString("project"),
-			zone:           viper.GetString("region"),
-			instanceType:   viper.GetString("instanceType"),
-			numTpus:        1,
-			username:       "raleigh",
-			repoPath:       "./levanter",
-			remoteRepoPath: "~/levanter",
-			installCommand: "~/.local/bin/uv sync --extra tpu",
-		}, 1)
+		watcher := NewTpuWatcher(GetConfig())
 
 		return &TpuLaunchMonitor{
 			watcher: watcher,
