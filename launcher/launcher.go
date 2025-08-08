@@ -161,7 +161,7 @@ func main() {
 		m = selectInstanceType(m)
 	}
 
-	if _, err := tea.NewProgram(m).Run(); err != nil {
+	if _, err := tea.NewProgram(ResizeWrapper{m}).Run(); err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
 	}

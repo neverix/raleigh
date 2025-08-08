@@ -134,7 +134,7 @@ func (m simpleSpinnerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinnerError:
 		return m, tea.Quit
 	case tea.WindowSizeMsg:
-		m.height = msg.Height - 1
+		m.height = msg.Height
 	default:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
