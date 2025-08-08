@@ -34,7 +34,7 @@ func tpuStatusFromString(s string) tpuStatus {
 	switch s {
 	case "CREATING":
 		return tpuStatusCreating
-	case "RUNNING":
+	case "READY":
 		return tpuStatusRunning
 	case "STOPPING":
 		return tpuStatusStopping
@@ -45,24 +45,24 @@ func tpuStatusFromString(s string) tpuStatus {
 }
 
 type gCloudTPU struct {
-	Status string `json:"status"`
+	Status string `json:"state"`
 }
 
 type tpuInfo struct {
-	Status          string `json:"status"`
-	IP              string `json:"networkEndPoints[0].accessConfig.externalIp"`
-	InternalIP      string `json:"networkEndPoints[0].ipAddress"`
-	InternalPort    int    `json:"networkEndPoints[0].port"`
-	Zone            string `json:"zone"`
-	Project         string `json:"project"`
-	AcceleratorType string `json:"acceleratorType"`
-	Version         string `json:"version"`
-	Preemptible     bool   `json:"preemptible"`
-	Health          string `json:"health"`
+	Status          tpuStatus
+	IP              string
+	InternalIP      string
+	InternalPort    int
+	Zone            string
+	Project         string
+	AcceleratorType string
+	Version         string
+	Preemptible     bool
+	Health          string
 }
 
 type tpuInfoRaw struct {
-	Status           string `json:"status"`
+	Status           string `json:"state"`
 	NetworkEndPoints []struct {
 		AccessConfig struct {
 			ExternalIP string `json:"externalIp"`
@@ -108,7 +108,7 @@ func (t *TpuController) checkStatus() (tpuInfo, tpuStatus) {
 		return tpuInfo{}, tpuStatusError
 	}
 	t.latestInfo = tpuInfo{
-		Status:          tpuInformation.Status,
+		Status:          tpuStatusFromString(tpuInformation.Status),
 		IP:              tpuInformation.NetworkEndPoints[0].AccessConfig.ExternalIP,
 		InternalIP:      tpuInformation.NetworkEndPoints[0].IPAddress,
 		InternalPort:    tpuInformation.NetworkEndPoints[0].Port,
@@ -119,7 +119,7 @@ func (t *TpuController) checkStatus() (tpuInfo, tpuStatus) {
 		Preemptible:     tpuInformation.SchedulingConfig.Preemptible,
 		Health:          tpuInformation.Health,
 	}
-	t.latestStatus = tpuStatusFromString(tpu.Status)
+	t.latestStatus = t.latestInfo.Status
 	return t.latestInfo, t.latestStatus
 }
 

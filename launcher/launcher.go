@@ -175,7 +175,7 @@ func listenTpuUpdates(watcher *TpuWatcher) tea.Cmd {
 			if status.status.status == tpuStatusRunning {
 				numActive++
 			}
-			if status.status.installed {
+			if status.status.installed && status.status.cloned {
 				numInstalled++
 			}
 			status.mutex.Unlock()

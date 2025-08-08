@@ -11,6 +11,7 @@ type TpuStatusUpdate struct {
 	status    tpuStatus
 	info      tpuInfo
 	installed bool
+	cloned    bool
 }
 
 type TpuCurrentStatus struct {
@@ -33,9 +34,9 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 		firstIteration = false
 		newInstaller, err := NewTpuInstaller(cfg, fmt.Sprintf("raleigh-tpu-%d", id))
 		if err != nil {
-			fmt.Printf("Error creating installer: %v\n", err)
 			continue
 		}
+		*installer = *newInstaller
 
 		updateStatus := func() {
 			status.mutex.Lock()
@@ -44,24 +45,22 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 				status:    installer.tpuController.latestStatus,
 				info:      installer.tpuController.latestInfo,
 				installed: installer.basicsInstalled,
+				cloned:    installer.repoCloned,
 			}
 			status.mutex.Unlock()
 			updateChan <- status.status
 		}
 		updateStatus()
 
-		fmt.Printf("newInstaller.tpuController.latestStatus: %v\n", newInstaller.tpuController.latestStatus)
-
-		if newInstaller.tpuController.latestStatus != tpuStatusRunning {
-			switch newInstaller.tpuController.latestStatus {
+		if installer.tpuController.latestStatus != tpuStatusRunning {
+			switch installer.tpuController.latestStatus {
 			case tpuStatusNonexistent:
-				newInstaller.tpuController.start()
+				installer.tpuController.start()
 			case tpuStatusError:
-				newInstaller.tpuController.delete()
+				installer.tpuController.delete()
 			}
 			continue
 		}
-		*installer = *newInstaller
 
 		if !installer.basicsInstalled {
 			installer.InstallBasics()
@@ -80,6 +79,7 @@ func NewTpuWatcher(cfg TpuConfig, n int) *TpuWatcher {
 	channel := make(chan TpuStatusUpdate)
 	statuses := make([]TpuCurrentStatus, n)
 	for i := 0; i < n; i++ {
+		tpuInstallers[i] = &TpuInstaller{}
 		go Watch(cfg, i, tpuInstallers[i], channel, &statuses[i])
 	}
 	return &TpuWatcher{

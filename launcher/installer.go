@@ -38,6 +38,7 @@ func NewTpuInstaller(cfg TpuConfig, id string) (*TpuInstaller, error) {
 			instanceType: cfg.instanceType,
 			id:           id,
 		},
+		cfg:              cfg,
 		installerVersion: "0.0.1a",
 	}
 	_, status := installer.tpuController.checkStatus()
@@ -50,10 +51,12 @@ func NewTpuInstaller(cfg TpuConfig, id string) (*TpuInstaller, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error checking basics installed: %w", err)
 		}
+
 		installer.repoClonedHash, installer.repoCloned, err = installer.CheckRepoCloned()
 		if err != nil {
 			return nil, fmt.Errorf("error checking repo cloned: %w", err)
 		}
+
 	}
 	return &installer, nil
 }
@@ -105,10 +108,13 @@ func (t *TpuInstaller) CheckBasicsInstalled() (bool, error) {
 
 func runCommand(t *TpuInstaller, command string) error {
 	cmd := t.tpuController.ssh(t.cfg.username, command)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
+	stderr := bytes.Buffer{}
+	cmd.Stderr = &stderr
 	err := cmd.Run()
-	return err
+	if err != nil {
+		return fmt.Errorf("error running command: %w: %s", err, stderr.String())
+	}
+	return nil
 }
 
 func (t *TpuInstaller) InstallBasics() error {
@@ -143,6 +149,12 @@ func (t *TpuInstaller) InstallBasics() error {
 			return fmt.Errorf("error removing temp netrc: %w", err)
 		}
 	}
+
+	err = runCommand(t, "mkdir -p ~/.raleigh && echo '"+t.installerVersion+"' > ~/.raleigh/install-version")
+	if err != nil {
+		return fmt.Errorf("error writing install version: %w", err)
+	}
+
 	return nil
 }
 
@@ -185,6 +197,7 @@ func (t *TpuInstaller) CloneRepo() error {
 	if err != nil {
 		return fmt.Errorf("error hashing repo: %w", err)
 	}
+
 	err = runCommand(t, "echo '"+dirHash+"' > ~/.raleigh/repo-version")
 	if err != nil {
 		return fmt.Errorf("error writing repo version: %w", err)
