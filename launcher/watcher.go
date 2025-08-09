@@ -12,6 +12,7 @@ type TpuStatusUpdate struct {
 	info      tpuInfo
 	installed bool
 	cloned    bool
+	running   bool
 	err       error
 }
 
@@ -45,6 +46,7 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 					info:      installer.tpuController.latestInfo,
 					installed: installer.basicsInstalled,
 					cloned:    installer.repoCloned,
+					running:   installer.runningPid != -1,
 					err:       nil,
 				}
 			}
@@ -79,10 +81,38 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 		}
 
 		if !installer.repoCloned {
+			if installer.repoClonedHash != "" {
+				err = installer.KillRunningProcess()
+				// process may exist, need to kill or verify it's dead
+				updateStatus(err)
+				fmt.Println("Killed running process")
+				if err != nil {
+					continue
+				}
+				installer.runningPid = -1
+			}
 			err = installer.CloneRepo()
 			updateStatus(err)
 			if err != nil {
 				continue
+			}
+		}
+
+		if installer.runningPid == -1 {
+			err = installer.StartProcess()
+			updateStatus(err)
+		} else {
+			running, err := installer.tpuController.checkProcessRunning(installer.runningPid)
+			updateStatus(err)
+			if err != nil {
+				continue
+			}
+			if !running {
+				err = installer.StartProcess()
+				updateStatus(err)
+				if err != nil {
+					continue
+				}
 			}
 		}
 	}

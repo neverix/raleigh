@@ -7,6 +7,9 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"time"
+
+	"golang.org/x/net/context"
 )
 
 type TpuController struct {
@@ -148,6 +151,60 @@ func (t *TpuController) rsync(localPath string, remotePath string, user string) 
 		return fmt.Errorf("error rsync: %v", stderr.String())
 	}
 	return nil
+}
+
+func (t *TpuController) checkProcessRunning(pid int) (bool, error) {
+	if pid == -1 {
+		return false, nil
+	}
+	cmd := t.ssh("root", fmt.Sprintf("kill -0 %d", pid))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		if strings.Contains(stderr.String(), "No such process") {
+			return false, nil
+		}
+		return false, fmt.Errorf("error checking process running: %v", stderr.String())
+	}
+	return true, nil
+}
+
+func (t *TpuController) killProcess(pid int, retry time.Duration, ctx context.Context) error {
+	if pid == -1 {
+		return nil
+	}
+	cmd := t.ssh("root", fmt.Sprintf("kill %d", pid))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		if strings.Contains(stderr.String(), "No such process") {
+			return nil
+		}
+		return fmt.Errorf("error killing process: %v", stderr.String())
+	}
+
+	ticker := time.NewTicker(retry)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			checkCmd := t.ssh("root", fmt.Sprintf("kill %d", pid))
+			var checkErr bytes.Buffer
+			checkCmd.Stderr = &checkErr
+			err := checkCmd.Run()
+			if err != nil {
+				if strings.Contains(checkErr.String(), "No such process") {
+					return nil
+				}
+				return fmt.Errorf("error killing process: %v", checkErr.String())
+			}
+		}
+	}
 }
 
 func (t *TpuController) scpFrom(user string, localPath string, remotePath string) error {

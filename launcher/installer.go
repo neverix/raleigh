@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jdx/go-netrc"
 	"golang.org/x/mod/sumdb/dirhash"
+	"golang.org/x/net/context"
 )
 
 type TpuConfig struct {
@@ -21,6 +24,7 @@ type TpuConfig struct {
 	installCommand   string
 	tpuPrefix        string
 	installerVersion string
+	runCommand       string
 }
 
 type TpuInstaller struct {
@@ -30,6 +34,7 @@ type TpuInstaller struct {
 	basicsInstalled  bool
 	repoClonedHash   string
 	repoCloned       bool
+	runningPid       int
 }
 
 func NewTpuInstaller(cfg TpuConfig, id string) (*TpuInstaller, error) {
@@ -57,6 +62,11 @@ func NewTpuInstaller(cfg TpuConfig, id string) (*TpuInstaller, error) {
 		installer.repoClonedHash, installer.repoCloned, err = installer.CheckRepoCloned()
 		if err != nil {
 			return nil, fmt.Errorf("error checking repo cloned: %w", err)
+		}
+
+		installer.runningPid, err = installer.CheckProcessRunning()
+		if err != nil {
+			return nil, fmt.Errorf("error checking process running: %w", err)
 		}
 	}
 	return &installer, nil
@@ -204,5 +214,55 @@ func (t *TpuInstaller) CloneRepo() error {
 		return fmt.Errorf("error writing repo version: %w", err)
 	}
 
+	return nil
+}
+
+func (t *TpuInstaller) CheckProcessRunning() (int, error) {
+	pidFile := "~/.raleigh/running.pid"
+	pid, catErr := t.tpuController.ReadFile(t.cfg.username, pidFile)
+	if catErr != nil {
+		if catErr.IsNoFile() {
+			return -1, nil
+		}
+		return -1, fmt.Errorf("error reading pid file: %w", catErr)
+	}
+	pidInt, err := strconv.Atoi(pid)
+	if err != nil {
+		return -1, fmt.Errorf("error parsing pid: %w", err)
+	}
+	return pidInt, nil
+}
+
+func (t *TpuInstaller) KillRunningProcess() error {
+	err := t.tpuController.killProcess(t.runningPid, 1*time.Second, context.Background())
+	if err != nil {
+		return fmt.Errorf("error killing process: %w", err)
+	}
+	err = runCommand(t, "rm -f ~/.raleigh/running.pid")
+	if err != nil {
+		return fmt.Errorf("error removing pid file: %s", err)
+	}
+	t.runningPid = -1
+	return nil
+}
+
+func (t *TpuInstaller) StartProcess() error {
+	// assumes that the process is not running
+	// even if it is, tpu lockfile will be removed
+
+	cmd := t.tpuController.ssh(t.cfg.username, fmt.Sprintf("cd %s && nohup %s & echo $! > ~/.raleigh/running.pid", t.cfg.remoteRepoPath, t.cfg.runCommand))
+	stderr := bytes.Buffer{}
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("error starting process: %s", stderr.String())
+	}
+	pid, err := t.CheckProcessRunning()
+	if err != nil {
+		return fmt.Errorf("error checking process running: %s", stderr.String())
+	}
+	if pid == -1 {
+		return fmt.Errorf("process not running")
+	}
 	return nil
 }

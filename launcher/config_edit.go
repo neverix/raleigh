@@ -307,5 +307,6 @@ func GetConfig() TpuConfig {
 		installCommand:   viper.GetString("installCommand"),
 		tpuPrefix:        viper.GetString("tpuPrefix"),
 		installerVersion: viper.GetString("installerVersion"),
+		runCommand:       viper.GetString("runCommand"),
 	}
 }

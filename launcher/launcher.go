@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/viper"
@@ -128,6 +129,7 @@ func main() {
 	viper.SetDefault("remoteRepoPath", "~/jif")
 	viper.SetDefault("installCommand", "~/.local/bin/uv sync")
 	viper.SetDefault("installerVersion", "0.0.1b")
+	viper.SetDefault("runCommand", "~/.local/bin/uv run -m jif")
 
 	var m tea.Model
 
@@ -172,6 +174,7 @@ type tpuStats struct {
 	numActive     int
 	numInstalled  int
 	numCloned     int
+	numRunning    int
 	latestError   error
 	latestErrorId int
 }
@@ -179,12 +182,13 @@ type tpuStats struct {
 type TpuLaunchMonitor struct {
 	watcher  *TpuWatcher
 	tpuStats tpuStats
+	viewport viewport.Model
 }
 
 func listenTpuUpdates(watcher *TpuWatcher) tea.Cmd {
 	return func() tea.Msg {
 		update := <-watcher.updates
-		numActive, numInstalled, numCloned := 0, 0, 0
+		numActive, numInstalled, numCloned, numRunning := 0, 0, 0, 0
 		latestError := error(nil)
 		latestErrorId := -1
 		if update.err != nil {
@@ -203,12 +207,16 @@ func listenTpuUpdates(watcher *TpuWatcher) tea.Cmd {
 			if status.status.cloned {
 				numCloned++
 			}
+			if status.status.running {
+				numRunning++
+			}
 			status.mutex.Unlock()
 		}
 		return tpuStats{
 			numActive:     numActive,
 			numInstalled:  numInstalled,
 			numCloned:     numCloned,
+			numRunning:    numRunning,
 			latestError:   latestError,
 			latestErrorId: latestErrorId,
 		}
@@ -221,6 +229,11 @@ func (t *TpuLaunchMonitor) Init() tea.Cmd {
 
 func (t *TpuLaunchMonitor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		t.viewport.Width = msg.Width
+		t.viewport.Height = msg.Height - 6
+		return t, nil
+
 	case tea.KeyMsg:
 		switch keypress := msg.String(); keypress {
 		case "q", "ctrl+c":
@@ -228,17 +241,24 @@ func (t *TpuLaunchMonitor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tpuStats:
 		t.tpuStats = msg
+		if t.tpuStats.latestError != nil {
+			errorStr := fmt.Sprintf("Error: \"%s\" (TPU %d)", strings.ReplaceAll(t.tpuStats.latestError.Error(), "\n", "\\n"), t.tpuStats.latestErrorId)
+			t.viewport.SetContent(lipgloss.NewStyle().Width(t.viewport.Width).Render(errorStr))
+		} else {
+			t.viewport.SetContent("")
+		}
 		return t, listenTpuUpdates(t.watcher)
 	}
-	return t, nil
+	var cmd tea.Cmd
+	t.viewport, cmd = t.viewport.Update(msg)
+	return t, cmd
 }
 
 func (t *TpuLaunchMonitor) View() string {
 	builder := strings.Builder{}
-	builder.WriteString(fmt.Sprintf("Active: %d, Installed: %d, Cloned: %d", t.tpuStats.numActive, t.tpuStats.numInstalled, t.tpuStats.numCloned))
-	if t.tpuStats.latestError != nil {
-		builder.WriteString(fmt.Sprintf("\nError: \"%s\" (TPU %d)", strings.ReplaceAll(t.tpuStats.latestError.Error(), "\n", "\\n"), t.tpuStats.latestErrorId))
-	}
+	builder.WriteString(lipgloss.NewStyle().Width(t.viewport.Width).Border(lipgloss.NormalBorder()).Padding(1).Render(t.viewport.View()))
+	statsStr := fmt.Sprintf("Active: %d, Installed: %d, Cloned: %d, Running: %d", t.tpuStats.numActive, t.tpuStats.numInstalled, t.tpuStats.numCloned, t.tpuStats.numRunning)
+	builder.WriteString(lipgloss.NewStyle().Width(t.viewport.Width).Border(lipgloss.NormalBorder()).Padding(1).Render(statsStr))
 	return builder.String()
 }
 
