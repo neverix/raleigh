@@ -58,7 +58,6 @@ func NewTpuInstaller(cfg TpuConfig, id string) (*TpuInstaller, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error checking repo cloned: %w", err)
 		}
-
 	}
 	return &installer, nil
 }

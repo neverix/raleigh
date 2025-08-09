@@ -12,6 +12,7 @@ type TpuStatusUpdate struct {
 	info      tpuInfo
 	installed bool
 	cloned    bool
+	err       error
 }
 
 type TpuCurrentStatus struct {
@@ -32,25 +33,32 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 			time.Sleep(5 * time.Second)
 		}
 		firstIteration = false
+		updateStatus := func(err error) {
+			status.mutex.Lock()
+			if err != nil {
+				status.status.id = id
+				status.status.err = err
+			} else {
+				status.status = TpuStatusUpdate{
+					id:        id,
+					status:    installer.tpuController.latestStatus,
+					info:      installer.tpuController.latestInfo,
+					installed: installer.basicsInstalled,
+					cloned:    installer.repoCloned,
+					err:       nil,
+				}
+			}
+			updateChan <- status.status
+			status.mutex.Unlock()
+		}
 		newInstaller, err := NewTpuInstaller(cfg, fmt.Sprintf("%s%d", cfg.tpuPrefix, id))
 		if err != nil {
+			updateStatus(err)
 			continue
 		}
 		*installer = *newInstaller
 
-		updateStatus := func() {
-			status.mutex.Lock()
-			status.status = TpuStatusUpdate{
-				id:        id,
-				status:    installer.tpuController.latestStatus,
-				info:      installer.tpuController.latestInfo,
-				installed: installer.basicsInstalled,
-				cloned:    installer.repoCloned,
-			}
-			status.mutex.Unlock()
-			updateChan <- status.status
-		}
-		updateStatus()
+		updateStatus(nil)
 
 		if installer.tpuController.latestStatus != tpuStatusRunning {
 			switch installer.tpuController.latestStatus {
@@ -63,13 +71,19 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 		}
 
 		if !installer.basicsInstalled {
-			installer.InstallBasics()
-			updateStatus()
+			err = installer.InstallBasics()
+			updateStatus(err)
+			if err != nil {
+				continue
+			}
 		}
 
 		if !installer.repoCloned {
-			installer.CloneRepo()
-			updateStatus()
+			err = installer.CloneRepo()
+			updateStatus(err)
+			if err != nil {
+				continue
+			}
 		}
 	}
 }

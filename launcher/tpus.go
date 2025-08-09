@@ -131,8 +131,7 @@ func (t *TpuController) scp(localPath string, remotePath string, user string) er
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		log.Printf("error scp: %v\n", stderr.String())
-		return err
+		return fmt.Errorf("error scp: %v", stderr.String())
 	}
 	return nil
 }
@@ -141,13 +140,12 @@ func (t *TpuController) rsync(localPath string, remotePath string, user string) 
 	if t.latestInfo.Status != tpuStatusRunning {
 		return fmt.Errorf("tpu must be running to rsync")
 	}
-	cmd := exec.Command("rsync", "-avz", localPath, user+"@"+t.latestInfo.IP+":"+remotePath, "-e", "ssh -i ~/.ssh/google_compute_engine -o \"StrictHostKeyChecking=no\nUserKnownHostsFile=/dev/null\"")
+	cmd := exec.Command("rsync", "-avz", localPath+"/", user+"@"+t.latestInfo.IP+":"+remotePath, "-e", "ssh -i ~/.ssh/google_compute_engine -o \"StrictHostKeyChecking=no\"")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		log.Printf("error rsync: %v\n", stderr.String())
-		return err
+		return fmt.Errorf("error rsync: %v", stderr.String())
 	}
 	return nil
 }
@@ -158,8 +156,7 @@ func (t *TpuController) scpFrom(user string, localPath string, remotePath string
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		log.Printf("error scp from: %v\n", stderr.String())
-		return err
+		return fmt.Errorf("error scp from: %v", stderr.String())
 	}
 	return nil
 }
@@ -178,8 +175,7 @@ func (t *TpuController) start() error {
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	if err != nil {
-		log.Printf("error starting tpu: %v\n", stderr.String())
-		return err
+		return fmt.Errorf("error starting tpu: %v", stderr.String())
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -168,8 +169,11 @@ func main() {
 }
 
 type tpuStats struct {
-	numActive    int
-	numInstalled int
+	numActive     int
+	numInstalled  int
+	numCloned     int
+	latestError   error
+	latestErrorId int
 }
 
 type TpuLaunchMonitor struct {
@@ -179,22 +183,34 @@ type TpuLaunchMonitor struct {
 
 func listenTpuUpdates(watcher *TpuWatcher) tea.Cmd {
 	return func() tea.Msg {
-		<-watcher.updates
-		numActive, numInstalled := 0, 0
-		for _, status := range watcher.statuses {
+		update := <-watcher.updates
+		numActive, numInstalled, numCloned := 0, 0, 0
+		latestError := error(nil)
+		latestErrorId := -1
+		if update.err != nil {
+			latestError = update.err
+			latestErrorId = update.id + 1
+		}
+		for i := range len(watcher.statuses) {
+			status := &watcher.statuses[i]
 			status.mutex.Lock()
 			if status.status.status == tpuStatusRunning {
 				numActive++
 			}
-			if status.status.installed && status.status.cloned {
+			if status.status.installed {
 				numInstalled++
 			}
+			if status.status.cloned {
+				numCloned++
+			}
 			status.mutex.Unlock()
-
 		}
 		return tpuStats{
-			numActive:    numActive,
-			numInstalled: numInstalled,
+			numActive:     numActive,
+			numInstalled:  numInstalled,
+			numCloned:     numCloned,
+			latestError:   latestError,
+			latestErrorId: latestErrorId,
 		}
 	}
 }
@@ -212,13 +228,18 @@ func (t *TpuLaunchMonitor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tpuStats:
 		t.tpuStats = msg
-		return t, nil
+		return t, listenTpuUpdates(t.watcher)
 	}
 	return t, nil
 }
 
 func (t *TpuLaunchMonitor) View() string {
-	return fmt.Sprintf("Active: %d, Installed: %d", t.tpuStats.numActive, t.tpuStats.numInstalled)
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf("Active: %d, Installed: %d, Cloned: %d", t.tpuStats.numActive, t.tpuStats.numInstalled, t.tpuStats.numCloned))
+	if t.tpuStats.latestError != nil {
+		builder.WriteString(fmt.Sprintf("\nError: \"%s\" (TPU %d)", strings.ReplaceAll(t.tpuStats.latestError.Error(), "\n", "\\n"), t.tpuStats.latestErrorId))
+	}
+	return builder.String()
 }
 
 func start(m tea.Model) tea.Model {
