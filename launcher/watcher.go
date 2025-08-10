@@ -93,7 +93,7 @@ type hostSync struct {
 }
 
 func posmod(a, b int) int {
-	return (a%b + b) % b
+	return (a%b + b*2) % b
 }
 
 func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuStatusUpdate, statuses *[]TpuCurrentStatus, groupWg *sync.WaitGroup, activeSynchronizer *Synchronizer, currentGroupId *atomic.Int32) {
@@ -120,7 +120,10 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 					err:       nil,
 				}
 			}
-			updateChan <- status.status
+			status_val := status.status
+			go func() {
+				updateChan <- status_val
+			}()
 			status.mutex.Unlock()
 		}
 		newInstaller, err := NewTpuInstaller(cfg, fmt.Sprintf("%s%d", cfg.tpuPrefix, id))
@@ -272,6 +275,7 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 					updateStatus(err)
 					continue
 				}
+				updateStatus(nil)
 				barrier()
 			}
 
@@ -380,9 +384,9 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 							if i == myIndex {
 								continue
 							}
-							otherHosts[posmod((i-myIndex-1), len(myPorts))] = allHosts[i][posmod((myIndex-i-1), len(myPorts))]
+							otherHosts[posmod((i-myIndex), len(allHosts))-1] = allHosts[i][posmod((myIndex-i), len(allHosts))-1]
 						}
-						debugprintf("rank %d, other hosts: %v\n", id, otherHosts)
+						debugprintf("rank %d (%d), other hosts: %v\n", id, myIndex, otherHosts)
 						barrier()
 						err = installer.WriteRaleighInfo(raleighInfo{
 							Ports:   myPorts,

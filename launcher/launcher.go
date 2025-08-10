@@ -101,7 +101,9 @@ func main() {
 
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
+	if os.Getenv("IGNORE_LOCAL_CONFIG") != "1" {
+		viper.AddConfigPath(".")
+	}
 	viper.AddConfigPath("/etc/raleigh/")
 	viper.AddConfigPath("$HOME/.raleigh")
 

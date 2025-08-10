@@ -323,7 +323,7 @@ func debugprintf(format string, a ...any) {
 	debugFile.Sync()
 }
 
-func (t *TpuInstaller) GetTpuLockfileUser() (int, error) {
+func (t *TpuInstaller) GetTpuLockfileUser() []int {
 	cmd := t.tpuController.ssh(t.cfg.username, "fuser /tmp/libtpu_lockfile")
 	stderr := bytes.Buffer{}
 	cmd.Stderr = &stderr
@@ -332,13 +332,19 @@ func (t *TpuInstaller) GetTpuLockfileUser() (int, error) {
 	err := cmd.Run()
 	if err != nil {
 		// fuser returns 1 if the file does not exist or is not locked
-		return -1, nil
+		return []int{}
 	}
-	pid, err := strconv.Atoi(strings.TrimSpace(stdout.String()))
-	if err != nil {
-		return -1, fmt.Errorf("error getting tpu lockfile user: %s", err)
+	pids := []int{}
+	split := strings.Split(strings.TrimSpace(stdout.String()), " ")
+	for _, s := range split {
+		if s != "" {
+			pid, err := strconv.Atoi(s)
+			if err == nil {
+				pids = append(pids, pid)
+			}
+		}
 	}
-	return pid, nil
+	return pids
 }
 
 func (t *TpuInstaller) KillRunningProcess() error {
@@ -346,11 +352,8 @@ func (t *TpuInstaller) KillRunningProcess() error {
 	if err != nil {
 		return fmt.Errorf("error killing process: %w", err)
 	}
-	user, err := t.GetTpuLockfileUser()
-	if err != nil {
-		return fmt.Errorf("error getting tpu lockfile user: %s", err)
-	}
-	if user != -1 {
+	users := t.GetTpuLockfileUser()
+	for _, user := range users {
 		err = t.tpuController.killProcess(user, 1*time.Second, context.Background())
 		if err != nil {
 			return fmt.Errorf("error killing tpu lockfile user: %w", err)
