@@ -126,7 +126,7 @@ func main() {
 	viper.SetDefault("region", "europe-west4-a")
 	viper.SetDefault("tpuPrefix", "raleigh-v3-")
 	viper.SetDefault("numTpus", 2)
-	viper.SetDefault("numTpusActive", 2)
+	viper.SetDefault("numTpusActive", viper.GetInt("numTpus"))
 	viper.SetDefault("username", "raleigh")
 	viper.SetDefault("repoPath", "./jif")
 	viper.SetDefault("remoteRepoPath", "~/jif")
