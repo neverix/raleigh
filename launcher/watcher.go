@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"math/rand/v2"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,17 +27,6 @@ type TpuWatcher struct {
 	tpuInstallers []*TpuInstaller
 	updates       chan TpuStatusUpdate
 	statuses      []TpuCurrentStatus
-}
-
-func debugprintf(format string, a ...any) {
-	debugFile, err := os.OpenFile("./debug.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Printf("error opening debug file: %v\n", err)
-		return
-	}
-	defer debugFile.Close()
-	fmt.Fprintf(debugFile, format, a...)
-	debugFile.Sync()
 }
 
 type Synchronizer struct {

@@ -8,6 +8,8 @@ Basic implementation of [DeMo](https://github.com/bloc97/DeMo) in Jax for TPUs. 
 
 ```bash
 # have gcloud and rsync installed
+# a TRC quota helps
+# set firewall rules to allow TCP traffic on all ports
 git submodule update --init --recursive
 go run launcher/*.go
 ```
@@ -25,6 +27,8 @@ go run launcher/*.go
   * Launching
     * Automatically take in running processes
       * Figure out a source of truth for TPU groups
+    * Optimize port selection
+      * Currently, we use arbitrary ports and need to open the firewall entirely
 * Jax side
   * Separate out DeMo into a library
   * Staggered CPU tensor sending

@@ -312,12 +312,51 @@ func (t *TpuInstaller) WriteRaleighInfo(info raleighInfo) error {
 	return nil
 }
 
+func debugprintf(format string, a ...any) {
+	debugFile, err := os.OpenFile("./debug.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("error opening debug file: %v\n", err)
+		return
+	}
+	defer debugFile.Close()
+	fmt.Fprintf(debugFile, format, a...)
+	debugFile.Sync()
+}
+
+func (t *TpuInstaller) GetTpuLockfileUser() (int, error) {
+	cmd := t.tpuController.ssh(t.cfg.username, "fuser /tmp/libtpu_lockfile")
+	stderr := bytes.Buffer{}
+	cmd.Stderr = &stderr
+	stdout := bytes.Buffer{}
+	cmd.Stdout = &stdout
+	err := cmd.Run()
+	if err != nil {
+		// fuser returns 1 if the file does not exist or is not locked
+		return -1, nil
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(stdout.String()))
+	if err != nil {
+		return -1, fmt.Errorf("error getting tpu lockfile user: %s", err)
+	}
+	return pid, nil
+}
+
 func (t *TpuInstaller) KillRunningProcess() error {
 	err := t.tpuController.killProcess(t.runningPid, 1*time.Second, context.Background())
 	if err != nil {
 		return fmt.Errorf("error killing process: %w", err)
 	}
-	err = runCommand(t, "rm -f ~/.raleigh/running.pid")
+	user, err := t.GetTpuLockfileUser()
+	if err != nil {
+		return fmt.Errorf("error getting tpu lockfile user: %s", err)
+	}
+	if user != -1 {
+		err = t.tpuController.killProcess(user, 1*time.Second, context.Background())
+		if err != nil {
+			return fmt.Errorf("error killing tpu lockfile user: %w", err)
+		}
+	}
+	err = runCommand(t, "rm -f /tmp/libtpu_lockfile ~/.raleigh/running.pid")
 	if err != nil {
 		return fmt.Errorf("error removing pid file: %s", err)
 	}
