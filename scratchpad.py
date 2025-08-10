@@ -2,6 +2,13 @@
 %load_ext autoreload
 %autoreload 2
 #%%
+from jif.jif.raleigh import RaleighInfo
+import os
+open(f"{os.getenv('HOME')}/.raleigh/hosts.json", "w").write("""
+{"ports":[53109,51121,34501,39197,44211,35741,55853],"hosts":[["34.32.152.149",39821],["34.91.154.167",40241],["34.34.7.156",54817],["35.204.150.34",45851],["35.204.184.91",58717],["35.204.169.132",34979],null],"seed":53109,"params_seed":0,"group_id":776059}
+""")
+RaleighInfo.load(f"{os.getenv('HOME')}/.raleigh/hosts.json")
+#%%
 import jax
 import jax.numpy as jnp
 from jif.jif.demo import extract_dct, reconstruct_dct, ProjectConfig, project_dct

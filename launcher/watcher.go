@@ -46,62 +46,46 @@ type Synchronizer struct {
 	anyChans      []chan any
 	alreadyLocked int
 	lock          sync.Mutex
+	cond          *sync.Cond
 }
 
 func (s *Synchronizer) Add(n int) {
 	s.chans = make([]chan struct{}, n)
 	s.anyChans = make([]chan any, n)
 	for i := 0; i < n; i++ {
-		s.chans[i] = make(chan struct{}, 1)
-		s.anyChans[i] = make(chan any, 1)
+		s.chans[i] = make(chan struct{})
+		s.anyChans[i] = make(chan any)
 	}
+	s.cond = sync.NewCond(&s.lock)
 }
 
 func (s *Synchronizer) Sync() int {
 	s.lock.Lock()
 	myIndex := s.alreadyLocked
-
 	s.alreadyLocked++
+	if myIndex == len(s.chans)-1 {
+		s.alreadyLocked = 0
+		s.cond.Broadcast()
+	} else {
+		s.cond.Wait()
+	}
 	s.lock.Unlock()
-	writeToIndex := (myIndex + 1) % len(s.chans)
-
-	if myIndex == 0 {
-		s.chans[writeToIndex] <- struct{}{}
-	}
-	<-s.chans[myIndex]
-	if myIndex != 0 {
-		s.chans[writeToIndex] <- struct{}{}
-	}
-	s.lock.Lock()
-	s.alreadyLocked = 0
-	s.lock.Unlock()
-
-	if myIndex == 0 {
-		s.chans[writeToIndex] <- struct{}{}
-	}
-	<-s.chans[myIndex]
-	if myIndex != 0 {
-		s.chans[writeToIndex] <- struct{}{}
-	}
-
 	return myIndex
 }
 
 func (s *Synchronizer) AllGather(value any) []any {
 	myIndex := s.Sync()
-	for i := 0; i < len(s.chans); i++ {
-		if i != myIndex {
-			go func() {
-				s.anyChans[i] <- value
-			}()
-		}
-	}
 	results := make([]any, len(s.chans))
 	results[0] = value
-	for i := 0; i < len(s.chans)-1; i++ {
-		results[i+1] = <-s.anyChans[myIndex]
+	for i := 0; i < len(s.chans); i++ {
+		if i == myIndex {
+			for j := range len(s.chans) - 1 {
+				results[j+1] = <-s.anyChans[i]
+			}
+		} else {
+			s.anyChans[i] <- value
+		}
 	}
-	s.anyChans[myIndex] = make(chan any)
 	return results
 }
 
@@ -118,6 +102,10 @@ func (s *Synchronizer) SyncAll() (int, []int) {
 type hostSync struct {
 	host  [][]any
 	index int
+}
+
+func posmod(a, b int) int {
+	return (a%b + b) % b
 }
 
 func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuStatusUpdate, statuses *[]TpuCurrentStatus, groupWg *sync.WaitGroup, activeSynchronizer *Synchronizer, currentGroupId *atomic.Int32) {
@@ -292,8 +280,8 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 				loadedGroupId = currentGroupId.Load()
 				barrier()
 				err := checkErr(installer.UpdateStatus())
-				updateStatus(err)
 				if err != nil {
+					updateStatus(err)
 					continue
 				}
 				barrier()
@@ -399,12 +387,12 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 							allHosts[hs.index] = hs.host
 						}
 						debugprintf("rank %d, all hosts: %v\n", id, allHosts)
-						otherHosts := make([][]any, len(allHosts)-1)
+						otherHosts := make([][]any, len(myPorts))
 						for i := range len(allHosts) {
 							if i == myIndex {
 								continue
 							}
-							otherHosts[(i-myIndex-1)%len(myPorts)] = allHosts[i][(myIndex-i-1)%len(myPorts)]
+							otherHosts[posmod((i-myIndex-1), len(myPorts))] = allHosts[i][posmod((myIndex-i-1), len(myPorts))]
 						}
 						debugprintf("rank %d, other hosts: %v\n", id, otherHosts)
 						barrier()
