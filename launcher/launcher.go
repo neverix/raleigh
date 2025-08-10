@@ -126,12 +126,13 @@ func main() {
 	viper.SetDefault("region", "europe-west4-a")
 	viper.SetDefault("tpuPrefix", "raleigh-v3-")
 	viper.SetDefault("numTpus", 2)
+	viper.SetDefault("numTpusActive", 2)
 	viper.SetDefault("username", "raleigh")
 	viper.SetDefault("repoPath", "./jif")
 	viper.SetDefault("remoteRepoPath", "~/jif")
 	viper.SetDefault("installCommand", "~/.local/bin/uv sync")
 	viper.SetDefault("installerVersion", "0.0.1b")
-	viper.SetDefault("runCommand", "~/.local/bin/uv run -m jif")
+	viper.SetDefault("runCommand", "~/.local/bin/uv run ./train --raleigh_json ~/.raleigh/hosts.json")
 
 	var m tea.Model
 

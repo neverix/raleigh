@@ -311,5 +311,6 @@ func GetConfig() TpuConfig {
 		runCommand:       viper.GetString("runCommand"),
 		spot:             viper.GetBool("spot"),
 		preemptible:      viper.GetBool("preemptible"),
+		numTpusActive:    viper.GetInt("numTpusActive"),
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -27,6 +28,7 @@ type TpuConfig struct {
 	runCommand       string
 	spot             bool
 	preemptible      bool
+	numTpusActive    int
 }
 
 type TpuInstaller struct {
@@ -37,6 +39,7 @@ type TpuInstaller struct {
 	repoClonedHash   string
 	repoCloned       bool
 	runningPid       int
+	raleighInfo      raleighInfo
 }
 
 func NewTpuInstaller(cfg TpuConfig, id string) (*TpuInstaller, error) {
@@ -52,29 +55,43 @@ func NewTpuInstaller(cfg TpuConfig, id string) (*TpuInstaller, error) {
 		cfg:              cfg,
 		installerVersion: cfg.installerVersion,
 		runningPid:       -1,
+		raleighInfo:      raleighInfo{},
 	}
+	err := installer.UpdateStatus()
+	if err != nil {
+		return nil, err
+	}
+	return &installer, nil
+}
+
+func (installer *TpuInstaller) UpdateStatus() error {
 	_, status := installer.tpuController.checkStatus()
 	if status == tpuStatusError {
-		return nil, fmt.Errorf("error checking tpu status")
+		return fmt.Errorf("error checking tpu status")
 	}
 	if status == tpuStatusRunning {
 		basicsInstalled, err := installer.CheckBasicsInstalled()
 		installer.basicsInstalled = basicsInstalled
 		if err != nil {
-			return nil, fmt.Errorf("error checking basics installed: %w", err)
+			return fmt.Errorf("error checking basics installed: %w", err)
 		}
 
 		installer.repoClonedHash, installer.repoCloned, err = installer.CheckRepoCloned()
 		if err != nil {
-			return nil, fmt.Errorf("error checking repo cloned: %w", err)
+			return fmt.Errorf("error checking repo cloned: %w", err)
 		}
 
 		installer.runningPid, err = installer.CheckProcessRunning()
 		if err != nil {
-			return nil, fmt.Errorf("error checking process running: %w", err)
+			return fmt.Errorf("error checking process running: %w", err)
+		}
+
+		installer.raleighInfo, err = installer.GetRaleighInfo()
+		if err != nil {
+			return fmt.Errorf("error getting raleigh info: %w", err)
 		}
 	}
-	return &installer, nil
+	return nil
 }
 
 type catError struct {
@@ -241,6 +258,60 @@ func (t *TpuInstaller) CheckProcessRunning() (int, error) {
 	return pidInt, nil
 }
 
+type raleighInfo struct {
+	Ports      []int `json:"ports"`
+	Hosts      []any `json:"hosts"`
+	Seed       int   `json:"seed"`
+	ParamsSeed int   `json:"params_seed"`
+	GroupId    int   `json:"group_id"`
+}
+
+func (r raleighInfo) IsReal() bool {
+	return r.GroupId > 0
+}
+
+func (t *TpuInstaller) GetRaleighInfo() (raleighInfo, error) {
+	info, catErr := t.tpuController.ReadFile(t.cfg.username, "~/.raleigh/hosts.json")
+	if catErr != nil {
+		if catErr.IsNoFile() {
+			return raleighInfo{}, nil
+		}
+		return raleighInfo{}, fmt.Errorf("error reading hosts.json: %w", catErr)
+	}
+	infoParsed := raleighInfo{}
+	err := json.Unmarshal([]byte(info), &infoParsed)
+	if err != nil {
+		return raleighInfo{}, fmt.Errorf("error unmarshalling hosts.json: %w", err)
+	}
+
+	return infoParsed, nil
+}
+
+func (t *TpuInstaller) WriteRaleighInfo(info raleighInfo) error {
+	infoJson, err := json.Marshal(info)
+	if err != nil {
+		return fmt.Errorf("error marshalling hosts.json: %w", err)
+	}
+	tempFile, err := os.CreateTemp("", "hosts.json")
+	if err != nil {
+		return fmt.Errorf("error creating temp file: %w", err)
+	}
+	defer tempFile.Close()
+	_, err = tempFile.Write(infoJson)
+	if err != nil {
+		return fmt.Errorf("error writing temp file: %w", err)
+	}
+	err = t.tpuController.scp(tempFile.Name(), "~/.raleigh/hosts.json", t.cfg.username)
+	if err != nil {
+		return fmt.Errorf("error scping hosts.json: %w", err)
+	}
+	err = os.Remove(tempFile.Name())
+	if err != nil {
+		return fmt.Errorf("error removing temp file: %w", err)
+	}
+	return nil
+}
+
 func (t *TpuInstaller) KillRunningProcess() error {
 	err := t.tpuController.killProcess(t.runningPid, 1*time.Second, context.Background())
 	if err != nil {
@@ -273,4 +344,32 @@ func (t *TpuInstaller) StartProcess() error {
 		return fmt.Errorf("process not running")
 	}
 	return nil
+}
+
+func (t *TpuInstaller) GetUnusedPorts(nPorts int) ([]int, error) {
+	cmd := t.tpuController.ssh(t.cfg.username, fmt.Sprintf(
+		"~/.local/bin/uv run python -c 'import socket; print(*[socket.socket().getsockname()[1] for _ in range(%d)], sep=\"\n\")'",
+		nPorts,
+	))
+	stderr := bytes.Buffer{}
+	cmd.Stderr = &stderr
+	stdout := bytes.Buffer{}
+	cmd.Stdout = &stdout
+	err := cmd.Run()
+	if err != nil {
+		return nil, fmt.Errorf("error getting unused ports: %s", stderr.String())
+	}
+	ports := []int{}
+	for _, port := range strings.Split(stdout.String(), "\n") {
+		portInt, err := strconv.Atoi(port)
+		if err != nil {
+			continue
+		}
+		ports = append(ports, portInt)
+	}
+	if len(ports) < nPorts {
+		return nil, fmt.Errorf("expected %d ports, got %d", nPorts, len(ports))
+	}
+	ports = ports[:nPorts]
+	return ports, nil
 }
