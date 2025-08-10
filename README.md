@@ -35,6 +35,7 @@ go run launcher/*.go
   * P2P connection
   * Authentication
   * Test on v3-8, v2-8
+  * Test 3-way communication (and more)
 * General
   * Save checkpoints, share them & take in new nodes at regular intervals
   * Keep persistent SSH connection or write a TPU-side client; have a clear data structure
