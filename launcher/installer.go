@@ -214,6 +214,9 @@ func (t *TpuInstaller) CloneRepo() error {
 		return fmt.Errorf("error writing repo version: %w", err)
 	}
 
+	t.repoClonedHash = dirHash
+	t.repoCloned = true
+
 	return nil
 }
 
@@ -250,7 +253,7 @@ func (t *TpuInstaller) StartProcess() error {
 	// assumes that the process is not running
 	// even if it is, tpu lockfile will be removed
 
-	cmd := t.tpuController.ssh(t.cfg.username, fmt.Sprintf("cd %s && nohup %s & echo $! > ~/.raleigh/running.pid", t.cfg.remoteRepoPath, t.cfg.runCommand))
+	cmd := t.tpuController.ssh(t.cfg.username, fmt.Sprintf("cd %s && nohup %s > ~/.raleigh/nohup.log 2>&1 & echo $! > ~/.raleigh/running.pid", t.cfg.remoteRepoPath, t.cfg.runCommand))
 	stderr := bytes.Buffer{}
 	cmd.Stderr = &stderr
 	err := cmd.Run()

@@ -120,6 +120,7 @@ func main() {
 		}
 	}
 
+	viper.SetDefault("spot", false)
 	viper.SetDefault("preemptible", false)
 	viper.SetDefault("instanceType", "v4-8")
 	viper.SetDefault("tpuPrefix", "hobby")
@@ -162,6 +163,10 @@ func main() {
 	}
 	if viper.GetString("instanceType") == "" {
 		m = selectInstanceType(m)
+	}
+
+	if os.Getenv("AUTORUN") == "1" {
+		m = start(m)
 	}
 
 	if _, err := tea.NewProgram(ResizeWrapper{m}).Run(); err != nil {

@@ -272,6 +272,7 @@ func settings(m tea.Model) tea.Model {
 		{id: "region", name: "Region", fn: selectRegion},
 		{id: "instanceType", name: "Instance Type", fn: selectInstanceType},
 		{id: "preemptible", name: "Preemptible", fn: simpleSelectorBool("preemptible")},
+		{id: "spot", name: "Spot", fn: simpleSelectorBool("spot")},
 	}
 	items := []list.Item{
 		simpleListItem{name: "Back", id: "back"},

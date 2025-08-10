@@ -18,7 +18,7 @@ type TpuController struct {
 	instanceType string
 	id           string
 	preemptible  bool
-
+	spot         bool
 	latestInfo   tpuInfo
 	latestStatus tpuStatus
 }
@@ -63,6 +63,7 @@ type tpuInfo struct {
 	AcceleratorType string
 	Version         string
 	Preemptible     bool
+	Spot            bool
 	Health          string
 }
 

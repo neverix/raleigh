@@ -66,7 +66,7 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 			switch installer.tpuController.latestStatus {
 			case tpuStatusNonexistent:
 				installer.tpuController.start()
-			case tpuStatusError:
+			case tpuStatusStopped:
 				installer.tpuController.delete()
 			}
 			continue
@@ -85,11 +85,11 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 				err = installer.KillRunningProcess()
 				// process may exist, need to kill or verify it's dead
 				updateStatus(err)
-				fmt.Println("Killed running process")
 				if err != nil {
 					continue
 				}
 				installer.runningPid = -1
+				installer.repoClonedHash = ""
 			}
 			err = installer.CloneRepo()
 			updateStatus(err)
