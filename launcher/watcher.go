@@ -42,39 +42,48 @@ func debugprintf(format string, a ...any) {
 }
 
 type Synchronizer struct {
-	chans         []chan any
+	chans         []chan struct{}
+	anyChans      []chan any
 	alreadyLocked int
 	lock          sync.Mutex
 }
 
 func (s *Synchronizer) Add(n int) {
+	s.chans = make([]chan struct{}, n)
+	s.anyChans = make([]chan any, n)
 	for i := 0; i < n; i++ {
-		s.chans = append(s.chans, make(chan any))
+		s.chans[i] = make(chan struct{}, 1)
+		s.anyChans[i] = make(chan any, 1)
 	}
 }
 
-func (s *Synchronizer) getIndex() int {
+func (s *Synchronizer) Sync() int {
 	s.lock.Lock()
 	myIndex := s.alreadyLocked
+
 	s.alreadyLocked++
 	s.lock.Unlock()
-	return myIndex
-}
-
-func (s *Synchronizer) Sync() int {
-	myIndex := s.getIndex()
 	writeToIndex := (myIndex + 1) % len(s.chans)
-	go func() {
+
+	if myIndex == 0 {
 		s.chans[writeToIndex] <- struct{}{}
-	}()
+	}
 	<-s.chans[myIndex]
+	if myIndex != 0 {
+		s.chans[writeToIndex] <- struct{}{}
+	}
 	s.lock.Lock()
 	s.alreadyLocked = 0
 	s.lock.Unlock()
-	go func() {
+
+	if myIndex == 0 {
 		s.chans[writeToIndex] <- struct{}{}
-	}()
+	}
 	<-s.chans[myIndex]
+	if myIndex != 0 {
+		s.chans[writeToIndex] <- struct{}{}
+	}
+
 	return myIndex
 }
 
@@ -83,16 +92,32 @@ func (s *Synchronizer) AllGather(value any) []any {
 	for i := 0; i < len(s.chans); i++ {
 		if i != myIndex {
 			go func() {
-				s.chans[i] <- value
+				s.anyChans[i] <- value
 			}()
 		}
 	}
 	results := make([]any, len(s.chans))
 	results[0] = value
 	for i := 0; i < len(s.chans)-1; i++ {
-		results[i+1] = <-s.chans[myIndex]
+		results[i+1] = <-s.anyChans[myIndex]
 	}
+	s.anyChans[myIndex] = make(chan any)
 	return results
+}
+
+func (s *Synchronizer) SyncAll() (int, []int) {
+	myIndex := s.Sync()
+	results := s.AllGather(myIndex)
+	indices := make([]int, len(results))
+	for i, result := range results {
+		indices[i] = result.(int)
+	}
+	return myIndex, indices
+}
+
+type hostSync struct {
+	host  [][]any
+	index int
 }
 
 func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuStatusUpdate, statuses *[]TpuCurrentStatus, groupWg *sync.WaitGroup, activeSynchronizer *Synchronizer, currentGroupId *atomic.Int32) {
@@ -129,7 +154,10 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 		}
 		*installer = *newInstaller
 
+		debugprintf("rank %d, new installer: %v\n", id, installer)
+
 		updateStatus(nil)
+		debugprintf("rank %d, basics installed: %v\n", id, installer.basicsInstalled)
 
 		if installer.tpuController.latestStatus != tpuStatusRunning {
 			switch installer.tpuController.latestStatus {
@@ -149,6 +177,9 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 			}
 		}
 
+		debugprintf("rank %d, basics installed: %v\n", id, installer.basicsInstalled)
+		debugprintf("rank %d, repo cloned: %v\n", id, installer.repoCloned)
+
 		if !installer.repoCloned {
 			if installer.repoClonedHash != "" {
 				err = installer.KillRunningProcess()
@@ -167,6 +198,8 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 			}
 		}
 
+		debugprintf("rank %d, repo cloned: %v\n", id, installer.repoCloned)
+
 		lockedMutexes := make([]*sync.Mutex, 0)
 		LockAll := func() {
 			lockedMutexes = make([]*sync.Mutex, 0)
@@ -182,6 +215,8 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 			lockedMutexes = nil
 		}
 
+		debugprintf("rank %d, locked mutexes: %d\n", id, len(lockedMutexes))
+
 		// we only ever lock mutexes one at a time for a brief period so this is fine
 		{
 			LockAll()
@@ -196,6 +231,7 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 			if numActive < cfg.numTpusActive {
 				continue
 			}
+			debugprintf("rank %d, num active: %d\n", id, numActive)
 		}
 
 		// we only ever manage the running TPUs if we get a sufficient number of them up.
@@ -206,7 +242,9 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 		// we do this by waiting for the groupWg to be done.
 		// now, all running TPUs are guaranteed to execute the code below.
 		groupWg.Done()
+		debugprintf("rank %d, groupWg done\n", id)
 		groupWg.Wait()
+		debugprintf("rank %d, groupWg waited\n", id)
 
 		// useful primitive. i should have used it more
 		barrier := func() {
@@ -231,8 +269,10 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 		}
 
 		barrier()
+		debugprintf("rank %d, barrier\n", id)
 
 		groupWg.Add(1)
+		debugprintf("rank %d, groupWg added\n", id)
 
 		barrier()
 
@@ -250,12 +290,12 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 			{
 				barrier()
 				loadedGroupId = currentGroupId.Load()
-				// 	barrier()
-				// 	err := checkErr(installer.UpdateStatus())
-				// 	updateStatus(err)
-				// 	if err != nil {
-				// 		continue
-				// 	}
+				barrier()
+				err := checkErr(installer.UpdateStatus())
+				updateStatus(err)
+				if err != nil {
+					continue
+				}
 				barrier()
 			}
 
@@ -336,37 +376,37 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 						myIndex := activeSynchronizer.Sync()
 						debugprintf("rank %d, my index: %d, creating new group id: %d\n", id, myIndex, attemptedGroupId)
 						myPorts, err := installer.GetUnusedPorts(cfg.numTpusActive - 1)
+						debugprintf("rank %d, my index: %d, my ports: %v\n", id, myIndex, myPorts)
 						err = checkErr(err)
-						updateStatus(err)
+						debugprintf("err: %v\n", err)
 						if err != nil {
+							debugprintf("rank %d, error getting unused ports: %v\n", id, err)
+							updateStatus(err)
 							continue
 						}
-						debugprintf("rank %d, my index: %d, my ports: %v\n", id, myIndex, myPorts)
-						barrier()
-						allPortsRaw := activeSynchronizer.AllGather(myPorts)
-						barrier()
-						allPorts := make([][]int, 0)
-						for _, raw := range allPortsRaw {
-							allPorts = append(allPorts, raw.([]int))
-						}
-						debugprintf("rank %d, all ports: %v\n", id, allPorts)
 						barrier()
 						myHost := make([][]any, len(myPorts))
 						for i, port := range myPorts {
 							myHost[i] = []any{installer.tpuController.latestInfo.IP, port}
 						}
-						allHostsRaw := activeSynchronizer.AllGather(myHost)
-						allHosts := make([][]any, len(allHostsRaw))
-						for i, raw := range allHostsRaw {
-							allHosts[i] = raw.([]any)
+						debugprintf("rank %d, my host: %v\n", id, myHost)
+						allHostsRaw := activeSynchronizer.AllGather(hostSync{host: myHost, index: myIndex})
+						debugprintf("rank %d, my hosts: %v, all hosts raw: %v\n", id, myHost, allHostsRaw)
+						barrier()
+						allHosts := make([][][]any, len(allHostsRaw))
+						for _, raw := range allHostsRaw {
+							hs := raw.(hostSync)
+							allHosts[hs.index] = hs.host
 						}
-						otherHosts := make([]any, len(allHosts)-1)
+						debugprintf("rank %d, all hosts: %v\n", id, allHosts)
+						otherHosts := make([][]any, len(allHosts)-1)
 						for i := range len(allHosts) {
-							if i == 0 {
+							if i == myIndex {
 								continue
 							}
-							otherHosts[i-1] = allHosts[i][myIndex]
+							otherHosts[(i-myIndex-1)%len(myPorts)] = allHosts[i][(myIndex-i-1)%len(myPorts)]
 						}
+						debugprintf("rank %d, other hosts: %v\n", id, otherHosts)
 						barrier()
 						err = installer.WriteRaleighInfo(raleighInfo{
 							Ports:   myPorts,
@@ -374,29 +414,36 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 							Seed:    myPorts[0],
 							Hosts:   otherHosts,
 						})
+						debugprintf("rank %d, wrote raleigh info with err: %v\n", id, err)
 						err = checkErr(err)
-						updateStatus(err)
 						if err != nil {
+							updateStatus(err)
+							debugprintf("rank %d, error writing raleigh info: %v\n", id, err)
 							continue
 						}
+						debugprintf("rank %d, wrote raleigh info\n", id)
 						barrier()
 						currentGroupId.Store(attemptedGroupId)
 						barrier()
+						debugprintf("rank %d, starting process\n", id)
 						err = installer.StartProcess()
+						debugprintf("rank %d, started process with err: %v\n", id, err)
 						err = checkErr(err)
-						updateStatus(err)
 						if err != nil {
+							updateStatus(err)
+							debugprintf("rank %d, error starting process: %v\n", id, err)
 							continue
 						}
-						continue
+						debugprintf("rank %d, started process\n", id)
 					} else {
 						barrier()
 						// we need to kill some of the running processes
 						// specifically, we kill the process on the TPU we own.
 						err := installer.KillRunningProcess()
 						err = checkErr(err)
-						updateStatus(err)
 						if err != nil {
+							updateStatus(err)
+							debugprintf("rank %d, error killing process: %v\n", id, err)
 							continue
 						}
 						installer.runningPid = -1

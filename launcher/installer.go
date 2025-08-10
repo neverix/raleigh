@@ -259,11 +259,11 @@ func (t *TpuInstaller) CheckProcessRunning() (int, error) {
 }
 
 type raleighInfo struct {
-	Ports      []int `json:"ports"`
-	Hosts      []any `json:"hosts"`
-	Seed       int   `json:"seed"`
-	ParamsSeed int   `json:"params_seed"`
-	GroupId    int   `json:"group_id"`
+	Ports      []int   `json:"ports"`
+	Hosts      [][]any `json:"hosts"`
+	Seed       int     `json:"seed"`
+	ParamsSeed int     `json:"params_seed"`
+	GroupId    int     `json:"group_id"`
 }
 
 func (r raleighInfo) IsReal() bool {
@@ -343,12 +343,13 @@ func (t *TpuInstaller) StartProcess() error {
 	if pid == -1 {
 		return fmt.Errorf("process not running")
 	}
+	t.runningPid = pid
 	return nil
 }
 
 func (t *TpuInstaller) GetUnusedPorts(nPorts int) ([]int, error) {
 	cmd := t.tpuController.ssh(t.cfg.username, fmt.Sprintf(
-		"~/.local/bin/uv run python -c 'import socket; print(*[socket.socket().getsockname()[1] for _ in range(%d)], sep=\"\n\")'",
+		"~/.local/bin/uv run python -c 'import socket; sockets = [socket.socket() for _ in range(%d)]; [sock.bind((\"0.0.0.0\", 0)) for sock in sockets]; [print(sock.getsockname()[1]) for sock in sockets]'",
 		nPorts,
 	))
 	stderr := bytes.Buffer{}
