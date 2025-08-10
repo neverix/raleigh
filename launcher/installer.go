@@ -25,6 +25,8 @@ type TpuConfig struct {
 	tpuPrefix        string
 	installerVersion string
 	runCommand       string
+	spot             bool
+	preemptible      bool
 }
 
 type TpuInstaller struct {
@@ -44,9 +46,12 @@ func NewTpuInstaller(cfg TpuConfig, id string) (*TpuInstaller, error) {
 			zone:         cfg.zone,
 			instanceType: cfg.instanceType,
 			id:           id,
+			spot:         cfg.spot,
+			preemptible:  cfg.preemptible,
 		},
 		cfg:              cfg,
 		installerVersion: cfg.installerVersion,
+		runningPid:       -1,
 	}
 	_, status := installer.tpuController.checkStatus()
 	if status == tpuStatusError {

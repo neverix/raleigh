@@ -120,10 +120,11 @@ func main() {
 		}
 	}
 
-	viper.SetDefault("spot", false)
+	viper.SetDefault("spot", true)
 	viper.SetDefault("preemptible", false)
-	viper.SetDefault("instanceType", "v4-8")
-	viper.SetDefault("tpuPrefix", "hobby")
+	viper.SetDefault("instanceType", "v3-8")
+	viper.SetDefault("region", "europe-west4-a")
+	viper.SetDefault("tpuPrefix", "raleigh-v3-")
 	viper.SetDefault("numTpus", 2)
 	viper.SetDefault("username", "raleigh")
 	viper.SetDefault("repoPath", "./jif")

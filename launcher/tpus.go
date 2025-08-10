@@ -228,6 +228,9 @@ func (t *TpuController) start() error {
 	if t.preemptible {
 		args = append(args, "--preemptible")
 	}
+	if t.spot {
+		args = append(args, "--spot")
+	}
 	cmd := exec.Command("gcloud", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

@@ -98,6 +98,8 @@ func Watch(cfg TpuConfig, id int, installer *TpuInstaller, updateChan chan TpuSt
 			}
 		}
 
+		continue
+
 		if installer.runningPid == -1 {
 			err = installer.StartProcess()
 			updateStatus(err)
